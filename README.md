@@ -47,7 +47,7 @@ COPYRIGHT:
 
 ```
 NAME:
-   main booking - booking command for Fly Booking & Hotel Booking
+   main booking - Booking command for Fly Booking & Hotel Booking
 
 USAGE:
    main booking [command options] [arguments...]

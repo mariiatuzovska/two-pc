@@ -174,6 +174,10 @@ func book(c *cli.Context) error {
 				log.Fatal(err)
 			}
 			fmt.Println("Fly Booking & Hotel Booking transactions are committed")
+		} else {
+			flyTX.Rollback()
+			hotelTX.Rollback()
+			fmt.Println("Fly Booking & Hotel Booking transactions are rollbacked")
 		}
 	}
 
