@@ -1,0 +1,7 @@
+{
+    "Shema": "fly_booking",
+    "User": "postgres",
+    "Password": "mysecretpassword",
+    "Host": "127.0.0.1",
+    "Port": "5432"
+}

@@ -1,0 +1,7 @@
+{
+    "Shema": "hotel_booking",
+    "User": "postgres",
+    "Password": "mysecretpassword",
+    "Host": "localhost",
+    "Port": "5432"
+}
