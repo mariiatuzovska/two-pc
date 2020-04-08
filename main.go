@@ -23,13 +23,20 @@ type (
 	}
 	FlyBooking struct {
 		gorm.Model
-		ClientName, FlyNumber, From, To string
-		Date                            time.Time
+		ClientName          string
+		FlyNumber, From, To string
+		Date                time.Time
 	}
 	HotelBooking struct {
 		gorm.Model
-		ClientName, HotelName string
-		Arrival, Departure    time.Time
+		ClientName         string
+		HotelName          string
+		Arrival, Departure time.Time
+	}
+	Money struct {
+		gorm.Model
+		ClientName string `gorm:"unique;not_null"`
+		Amount     float32
 	}
 )
 
@@ -40,16 +47,37 @@ var (
 	layoutISO   string = "2006-01-02"
 )
 
+// /usr/local/Cellar/postgresql/12.2/share/doc/postgresql
+
+// /Users/mariiaandreevna/Projects/mygo/two-pc
+
 func main() {
 
 	app := cli.NewApp()
 	app.Name = ServiceName
 	app.Usage = fmt.Sprintf("%s command line client", ServiceName)
-	// app.Description = ""
+	app.Description = ""
 	app.Version = Version
 	app.Copyright = "2020, mariiatuzovska"
 	app.Authors = []cli.Author{cli.Author{Name: "Mariia Tuzovska"}}
 	app.Commands = []cli.Command{
+		{
+			Name:    "init",
+			Usage:   "Initialize client",
+			Aliases: []string{"b", "book"},
+			Action:  inite,
+			Flags: []cli.Flag{
+				&cli.StringFlag{
+					Name:  "money-db",
+					Usage: "Path to Holel Booking scheme Configuration",
+					Value: "configs/money.json",
+				},
+				&cli.StringFlag{
+					Name:  "ClientName",
+					Usage: "Client Name",
+				},
+			},
+		},
 		{
 			Name:    "booking",
 			Usage:   "Booking command for Fly Booking & Hotel Booking",
@@ -57,14 +85,19 @@ func main() {
 			Action:  book,
 			Flags: []cli.Flag{
 				&cli.StringFlag{
-					Name:  "fly-scheme",
-					Usage: "Path to Fly Booking scheme Configuration",
+					Name:  "fly-db",
+					Usage: "Path to Fly Booking db Configuration",
 					Value: "configs/fly.json",
 				},
 				&cli.StringFlag{
-					Name:  "hotel-scheme",
-					Usage: "Path to Holel Booking scheme Configuration",
+					Name:  "hotel-db",
+					Usage: "Path to Holel Booking db Configuration",
 					Value: "configs/hotel.json",
+				},
+				&cli.StringFlag{
+					Name:  "money-db",
+					Usage: "Path to Holel Booking db Configuration",
+					Value: "configs/money.json",
 				},
 				&cli.StringFlag{
 					Name:  "ClientName",
@@ -105,59 +138,145 @@ func main() {
 	app.Run(os.Args)
 }
 
-func book(c *cli.Context) error {
-
-	// connection and migration for Fly Booking
-	flyDB, err := newDBConnection(c.String("fly-scheme"))
+func inite(c *cli.Context) error {
+	if c.String("ClientName") == "" {
+		log.Fatal("Nil clients")
+	}
+	moneyDB, err := newDBConnection(c.String("money-db"))
 	if err != nil {
 		log.Fatal(err)
 	}
-	flyDB.AutoMigrate(&FlyBooking{})
-	flyRecord := flyFilling(c)
+	moneyDB.AutoMigrate(&Money{})
+	m := &Money{}
+	if moneyDB.First(&m,
+		&Money{
+			ClientName: c.String("ClientName"),
+		}).RecordNotFound() {
+		err = moneyDB.Create(
+			&Money{
+				ClientName: c.String("ClientName"),
+				Amount:     100,
+			}).Error
+		if err != nil {
+			log.Fatal(err)
+		}
+		log.Println(fmt.Sprintf("DEBUG | created new clien ClientName=%s Amount=100", c.String("ClientName")))
+	} else {
+		m.Amount += 50.0
+		err = moneyDB.First(&Money{}, m.ID).Update(m).Error
+		if err != nil {
+			log.Fatal(err)
+		}
+		log.Println(fmt.Sprintf("DEBUG | updated clien ClientName=%s Amount=%f", c.String("ClientName"), m.Amount))
+	}
+	return nil
+}
 
+func book(c *cli.Context) error {
+
+	// connection and migration to Fly DB
+	flyDB, err := newDBConnection(c.String("fly-db"))
+	if err != nil {
+		log.Fatal(err)
+	}
+	log.Println("DEBUG | Fly DB connected")
+	flyDB.AutoMigrate(&FlyBooking{})
+	log.Println("DEBUG | FlyBooking migrated")
+
+	// connection and migration to Money DB
+	moneyDB, err := newDBConnection(c.String("money-db"))
+	if err != nil {
+		log.Fatal(err)
+	}
+	log.Println("DEBUG | Money DB connected")
+	moneyDB.AutoMigrate(&Money{})
+	log.Println("DEBUG | Money migrated")
+
+	// connection and migration to Hotel DB
+	hotelDB, err := newDBConnection(c.String("hotel-db"))
+	if err != nil {
+		log.Fatal(err)
+	}
+	log.Println("DEBUG | Hotel DB connected")
+	hotelDB.AutoMigrate(&HotelBooking{})
+	log.Println("DEBUG | HotelBooking migrated")
+
+	flyRecord := flyFilling(c)
+	if moneyDB.First(&Money{}, &Money{ClientName: flyRecord.ClientName}).RecordNotFound() {
+		log.Fatal("\nNo money -- no honey\n")
+	}
+	log.Println("DEBUG | Fly record filled")
 	// begin a transaction for Fly Booking
 	flyTX := flyDB.Begin()
 	if err := flyTX.Error; err != nil {
+		log.Println("DEBUG | flyTX has been begun with error")
 		log.Fatal(err)
 	}
+	log.Println("DEBUG | flyTX has been begun")
 	if err := flyTX.Create(flyRecord).Error; err != nil {
 		// rollback the transaction in case of error
 		flyTX.Rollback()
+		log.Println("DEBUG | flyTX rollbecked")
 		log.Fatal(err)
 	}
+	log.Println("DEBUG | flyTX has been created")
 
-	var command string
+	var (
+		command string
+		cash    Money
+	)
 
-	fmt.Println("Commit Fly Booking transaction? Enter yes/y to commit the Fly Booking transaction or book the hotel! Enter n/no to stop.")
+	fmt.Println("Buy tickets: enter yes/y to buy and commit the Fly Booking transaction or book the hotel! Enter n/no to stop.")
 	fmt.Scan(&command)
 	if command == "y" || command == "yes" {
-		// commit the transaction
-		err := flyTX.Commit().Error
-		if err != nil {
-			log.Fatal(err)
+		if moneyDB.First(&cash, &Money{
+			ClientName: flyRecord.ClientName,
+		}).RecordNotFound() {
+			// rollback the transaction in case of error
+			flyTX.Rollback()
+			log.Println("DEBUG | flyTX rollbecked")
+			log.Fatal("\nNo money -- no honey\n")
 		}
-		fmt.Println("Fly Booking transaction is committed")
+		log.Println("DEBUG | cash exist")
+		if cash.Amount >= 50 {
+			cash.Amount -= 50
+			err = moneyDB.First(&Money{}, cash.ID).Update(cash).Error
+			if err != nil {
+				log.Fatal(err)
+			}
+			log.Println("DEBUG | cash -= 50")
+			flyTX.Commit()
+			log.Println("DEBUG | flyTX commited")
+		}
 	} else if command == "n" || command == "no" {
 		// rollback the transaction
 		flyTX.Rollback()
-		fmt.Println("Fly Booking transaction is rollbacked")
+		log.Println("DEBUG | flyTX rollbecked")
+		log.Println("\nFly Booking transaction is rollbacked\n")
 	} else {
-		// connection and migration for Hotel Booking
-		hotelDB, err := newDBConnection(c.String("hotel-scheme"))
-		if err != nil {
-			log.Fatal(err)
-		}
-		hotelDB.AutoMigrate(&HotelBooking{})
 		hotelRecord := hotelFilling(c)
 		hotelRecord.ClientName = flyRecord.ClientName
 		// begin a transaction for Hotel Booking
 		hotelTX := hotelDB.Begin()
+		log.Println("DEBUG | hotelTX has been begun")
 		if err := hotelTX.Error; err != nil {
+			log.Println("DEBUG | hotelTX has been begun with error")
 			log.Fatal(err)
 		}
 		if err := hotelTX.Create(hotelRecord).Error; err != nil {
 			// rollback the transaction in case of error
+			log.Println("DEBUG | hotelTX create with error")
 			hotelTX.Rollback()
+			log.Fatal(err)
+		}
+		if moneyDB.First(&cash, &Money{
+			ClientName: flyRecord.ClientName,
+		}).RecordNotFound() {
+			// rollback the transaction in case of error
+			flyTX.Rollback()
+			log.Println("DEBUG | flyTX rollbecked")
+			hotelTX.Rollback()
+			log.Println("DEBUG | hotelTX rollbecked")
 			log.Fatal(err)
 		}
 		command = ""
@@ -165,6 +284,20 @@ func book(c *cli.Context) error {
 		fmt.Scan(&command)
 		if command == "y" || command == "yes" {
 			// commit the transaction
+			if cash.Amount < 100 {
+				// rollback the transaction in case of error
+				flyTX.Rollback()
+				log.Println("DEBUG | flyTX rollbecked")
+				hotelTX.Rollback()
+				log.Println("DEBUG | hotelTX rollbecked")
+				log.Fatal("There is no money for transactions")
+				return nil
+			}
+			cash.Amount -= 100
+			err = moneyDB.First(&Money{}, cash.ID).Update(cash).Error
+			if err != nil {
+				log.Fatal(err)
+			}
 			err := flyTX.Commit().Error
 			if err != nil {
 				log.Fatal(err)
@@ -176,7 +309,9 @@ func book(c *cli.Context) error {
 			fmt.Println("Fly Booking & Hotel Booking transactions are committed")
 		} else {
 			flyTX.Rollback()
+			log.Println("DEBUG | flyTX rollbecked")
 			hotelTX.Rollback()
+			log.Println("DEBUG | hotelTX rollbecked")
 			fmt.Println("Fly Booking & Hotel Booking transactions are rollbacked")
 		}
 	}
@@ -196,12 +331,15 @@ func newDBConnection(path string) (*gorm.DB, error) {
 		return nil, err
 	}
 
-	return gorm.Open(DBPostgres,
-		DBPostgres+"://"+config.User+":"+config.Password+"@"+config.Host+":"+config.Port+"/"+config.Shema+"?sslmode=disable")
+	return gorm.Open(DBPostgres, fmt.Sprintf("host=%s port=%s user=%s dbname=%s password=%s sslmode=disable",
+		config.Host, config.Port, config.User, config.Shema, config.Password))
 }
 
 func flyFilling(c *cli.Context) *FlyBooking {
-
+	var (
+		err  error
+		date string
+	)
 	fly := FlyBooking{
 		ClientName: c.String("ClientName"),
 		FlyNumber:  c.String("FlyNumber"),
@@ -224,10 +362,6 @@ func flyFilling(c *cli.Context) *FlyBooking {
 		fmt.Println("Fly Booking | Enter To")
 		fmt.Scan(&fly.To)
 	}
-	var (
-		err  error
-		date string
-	)
 	if c.String("Date") == "" {
 		fmt.Println("Fly Booking | Enter Date")
 		fmt.Scan(&date)
@@ -238,29 +372,22 @@ func flyFilling(c *cli.Context) *FlyBooking {
 	if err != nil {
 		fly.Date = time.Now()
 	}
-
 	return &fly
 }
 
 func hotelFilling(c *cli.Context) *HotelBooking {
-
-	hotel := HotelBooking{
-		// ClientName: c.String("ClientName"),
-		HotelName: c.String("HotelName"),
-	}
-	// if hotel.ClientName == "" {
-	// 	fmt.Println("Hotel Booking | Enter Client Name")
-	// 	fmt.Scan(&hotel.ClientName)
-	// }
-	if hotel.HotelName == "" {
-		fmt.Println("Hotel Booking | Enter Hotel Name")
-		fmt.Scan(&hotel.HotelName)
-	}
 	var (
 		err       error
 		arrival   string
 		departure string
 	)
+	hotel := HotelBooking{
+		HotelName: c.String("HotelName"),
+	}
+	if hotel.HotelName == "" {
+		fmt.Println("Hotel Booking | Enter Hotel Name")
+		fmt.Scan(&hotel.HotelName)
+	}
 	if c.String("Arrival") == "" {
 		fmt.Println("Hotel Booking | Enter Arrival")
 		fmt.Scan(&arrival)
@@ -281,6 +408,5 @@ func hotelFilling(c *cli.Context) *HotelBooking {
 	if err != nil {
 		hotel.Departure = time.Now().Add(24 * time.Hour)
 	}
-
 	return &hotel
 }

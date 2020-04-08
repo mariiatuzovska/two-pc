@@ -65,22 +65,41 @@ OPTIONS:
    --Departure value     Departure date of Hotel Booking, for example 2006-01-02
 ```
 
-## two-phase commit running
+## two-phase commit running with docker
 
-`docker run -d -p 5432:5432 --name my-postgres -e POSTGRES_PASSWORD=mysecretpassword postgres`
+```
+$ mkdir -p custom_postgres
+$ echo '#!/bin/bash' > custom_postgres/build.sh
+$ echo 'sed -i "s/^.*max_prepared_transactions\s*=\s*\(.*\)$/max_prepared_transactions = 2/" "$PGDATA"/postgresql.conf' >> custom_postgres/build.sh
+$ chmod +x custom_postgres/build.sh
+```
 
-`docker exec -it my-postgres bash`
+PostgreSQL container in DOCKER:
+
+`$docker run -d --name my-postgres -e POSTGRES_PASSWORD=mysecretpassword postgres -c 'max_prepared_transactions=2' -c 'shared_buffers=256MB' -c 'max_connections=10'`
+
+`docker exec -it 6eed7d7278ac bash`
+
+`root@6eed7d7278ac:/# psql -h localhost -p 5432 -U postgres -d postgres`
+
+POSTRGES:
 
 `postgres=# CREATE DATABASE fly_booking;`
 
 `postgres=# CREATE DATABASE hotel_booking;`
 
-then, in the project package:
+`postgres=# CREATE DATABASE money;`
+
+`exit`
+
+`exit`
+
+GO tools:
 
 `go build`
 
-`./two-pc booking --ClientName Mariia --FlyNumber fu123 --From Kyiv --To Odessa --Date 12-06-2020 --HotelName BeutyHotel --Arrival 12-06-2020 --Departure 13-06-2020`
+`./two-pc book` or `./two-pc booking --ClientName Mariia --FlyNumber fu123 --From Kyiv --To Odessa --Date 12-06-2020 --HotelName BeutyHotel --Arrival 12-06-2020 --Departure 13-06-2020`
 
-`./two-pc book`
+anyway... 
 
-anyway
+[https://github.com/docker-library](https://github.com/docker-library/docs/commit/b1d90dbda8c85e10e7cb010df35d4989039b700d?short_path=f04184d#diff-f04184d2552bd93f5562b6437f3627d1)
