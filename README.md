@@ -23,7 +23,7 @@ NAME:
    two-phase-commit - two-phase-commit command line client
 
 USAGE:
-   main [global options] command [command options] [arguments...]
+   two-pc [global options] command [command options] [arguments...]
 
 VERSION:
    0.0.1
@@ -32,6 +32,7 @@ AUTHOR:
    Mariia Tuzovska
 
 COMMANDS:
+   init, b, book     Initialize client
    booking, b, book  Booking command for Fly Booking & Hotel Booking
    help, h           Shows a list of commands or help for one command
 
