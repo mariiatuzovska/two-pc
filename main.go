@@ -35,8 +35,8 @@ type (
 	}
 	Money struct {
 		gorm.Model
-		ClientName string `gorm:"unique;not_null"`
-		Amount     float32
+		ClientName string  `gorm:"unique;not_null"`
+		Amount     float32 `gorm"check(amount>0)`
 	}
 )
 
@@ -223,9 +223,9 @@ func book(c *cli.Context) error {
 	log.Println("DEBUG | HotelBooking migrated")
 
 	flyRecord := flyFilling(c)
-	if moneyDB.First(&Money{}, &Money{ClientName: flyRecord.ClientName}).RecordNotFound() {
-		log.Fatal("\nNo money -- no honey\n")
-	}
+	// if moneyDB.First(&Money{}, &Money{ClientName: flyRecord.ClientName}).RecordNotFound() {
+	// 	log.Fatal("\nNo money -- no honey\n")
+	// }
 	log.Println("DEBUG | Fly record filled")
 	// begin a transaction for Fly Booking
 	flyTX := flyDB.Begin()
@@ -247,110 +247,84 @@ func book(c *cli.Context) error {
 		log.Fatal(err)
 	}
 	log.Println("DEBUG | flyTX has been prepared")
-	var (
-		command string
-		cash    Money
-	)
 
-	fmt.Println("Buy tickets: enter yes/y to buy and commit the Fly Booking transaction or book the hotel! Enter n/no to stop.")
-	fmt.Scan(&command)
-	if command == "y" || command == "yes" {
-		if moneyDB.First(&cash, &Money{
-			ClientName: flyRecord.ClientName,
-		}).RecordNotFound() {
-			// rollback the transaction in case of error
-			flyTX.Rollback()
-			log.Println("DEBUG | flyTX rollbecked")
-			log.Fatal("\nNo money -- no honey\n")
-		}
-		log.Println("DEBUG | cash exist")
-		if cash.Amount >= 50 {
-			cash.Amount -= 50
-			err = moneyDB.First(&Money{}, cash.ID).Update(cash).Error
-			if err != nil {
-				log.Fatal(err)
-			}
-			log.Println("DEBUG | cash -= 50")
-			flyTX.Commit()
-			log.Println("DEBUG | flyTX commited")
-		} else {
-			log.Println("DEBUG | flyTX rollbecked")
-			flyTX.Rollback()
-			return nil
-		}
-	} else if command == "n" || command == "no" {
-		// rollback the transaction
+	hotelRecord := hotelFilling(c)
+	hotelRecord.ClientName = flyRecord.ClientName
+	// begin a transaction for Hotel Booking
+	hotelTX := hotelDB.Begin()
+	log.Println("DEBUG | hotelTX has been begun")
+	if err := hotelTX.Error; err != nil {
+		log.Println("DEBUG | hotelTX has been begun with error")
+		log.Fatal(err)
+	}
+	if err := hotelTX.Create(hotelRecord).Error; err != nil {
+		// rollback the transaction in case of error
+		log.Println("DEBUG | hotelTX create with error")
+		hotelTX.Rollback()
+		log.Fatal(err)
+	}
+	if err := hotelTX.Exec("PREPARE TRANSACTION 'foobar'").Error; err != nil {
+		hotelTX.Rollback()
+		log.Println("DEBUG | hotelTX has been prepared with error")
+		log.Fatal(err)
+	}
+	log.Println("DEBUG | hotelTX has been prepared")
+
+	// cash := Money{}
+	// if moneyDB.First(&cash, &Money{
+	// 	ClientName: flyRecord.ClientName,
+	// }).RecordNotFound() {
+	// 	// rollback the transaction in case of error
+	// 	flyTX.Rollback()
+	// 	log.Println("DEBUG | flyTX rollbecked")
+	// 	hotelTX.Rollback()
+	// 	log.Println("DEBUG | hotelTX rollbecked")
+	// 	log.Fatal(err)
+	// }
+	// cash.Amount -= 100
+
+	moneyTX := moneyDB.Begin()
+	if err := moneyTX.Error; err != nil {
+		log.Println("DEBUG | moneyTX has been begun with error")
+		log.Fatal(err)
+	}
+	log.Println("DEBUG | moneyTX has been begun")
+	if err := moneyTX.Update(&Money{}, gorm.Expr("amount - ?", 100)).Error; err != nil {
+		moneyTX.Rollback()
+		log.Println("DEBUG | moneyTX has been prepared with error")
 		flyTX.Rollback()
 		log.Println("DEBUG | flyTX rollbecked")
-		log.Println("\nFly Booking transaction is rollbacked\n")
-	} else {
-		hotelRecord := hotelFilling(c)
-		hotelRecord.ClientName = flyRecord.ClientName
-		// begin a transaction for Hotel Booking
-		hotelTX := hotelDB.Begin()
-		log.Println("DEBUG | hotelTX has been begun")
-		if err := hotelTX.Error; err != nil {
-			log.Println("DEBUG | hotelTX has been begun with error")
-			log.Fatal(err)
-		}
-		if err := hotelTX.Create(hotelRecord).Error; err != nil {
-			// rollback the transaction in case of error
-			log.Println("DEBUG | hotelTX create with error")
-			hotelTX.Rollback()
-			log.Fatal(err)
-		}
-		if err := hotelTX.Exec("PREPARE TRANSACTION 'foobar'").Error; err != nil {
-			hotelTX.Rollback()
-			log.Println("DEBUG | hotelTX has been prepared with error")
-			log.Fatal(err)
-		}
-		log.Println("DEBUG | hotelTX has been prepared")
-		if moneyDB.First(&cash, &Money{
-			ClientName: flyRecord.ClientName,
-		}).RecordNotFound() {
-			// rollback the transaction in case of error
-			flyTX.Rollback()
-			log.Println("DEBUG | flyTX rollbecked")
-			hotelTX.Rollback()
-			log.Println("DEBUG | hotelTX rollbecked")
-			log.Fatal(err)
-		}
-		command = ""
-		fmt.Println("Commit Fly Booking & Hotel Booking transactions? Enter yes/y to commit the transactions.")
-		fmt.Scan(&command)
-		if command == "y" || command == "yes" {
-			// commit the transaction
-			if cash.Amount < 100 {
-				// rollback the transaction in case of error
-				flyTX.Rollback()
-				log.Println("DEBUG | flyTX rollbecked")
-				hotelTX.Rollback()
-				log.Println("DEBUG | hotelTX rollbecked")
-				log.Fatal("There is no money for transactions")
-				return nil
-			}
-			cash.Amount -= 100
-			err = moneyDB.First(&Money{}, cash.ID).Update(cash).Error
-			if err != nil {
-				log.Fatal(err)
-			}
-			err := flyTX.Commit().Error
-			if err != nil {
-				log.Fatal(err)
-			}
-			err = hotelTX.Commit().Error
-			if err != nil {
-				log.Fatal(err)
-			}
-			fmt.Println("Fly Booking & Hotel Booking transactions are committed")
-		} else {
-			flyTX.Rollback()
-			log.Println("DEBUG | flyTX rollbecked")
-			hotelTX.Rollback()
-			log.Println("DEBUG | hotelTX rollbecked")
-			fmt.Println("Fly Booking & Hotel Booking transactions are rollbacked")
-		}
+		hotelTX.Rollback()
+		log.Println("DEBUG | hotelTX rollbecked")
+		log.Fatal(err)
 	}
+	log.Println("DEBUG | moneyTX has been created")
+	if err := moneyTX.Exec("PREPARE TRANSACTION 'foobar'").Error; err != nil {
+		moneyTX.Rollback()
+		log.Println("DEBUG | moneyTX has been prepared with error")
+		flyTX.Rollback()
+		log.Println("DEBUG | flyTX rollbecked")
+		hotelTX.Rollback()
+		log.Println("DEBUG | hotelTX rollbecked")
+		log.Fatal(err)
+	}
+	log.Println("DEBUG | moneyTX has been prepared")
+
+	err = flyTX.Commit().Error
+	if err != nil {
+		log.Fatal(err)
+	}
+	log.Println("DEBUG | flyTX commited")
+	err = hotelTX.Commit().Error
+	if err != nil {
+		log.Fatal(err)
+	}
+	log.Println("DEBUG | hotelTX commited")
+	err = moneyTX.Commit().Error
+	if err != nil {
+		log.Fatal(err)
+	}
+	log.Println("DEBUG | moneyTX commited")
 
 	return nil
 }
