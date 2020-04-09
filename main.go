@@ -304,7 +304,7 @@ func book(c *cli.Context) error {
 			log.Println("DEBUG | hotelTX has been prepared with error")
 			log.Fatal(err)
 		}
-		log.Println("DEBUG | flyTX has been prepared")
+		log.Println("DEBUG | hotelTX has been prepared")
 		if moneyDB.First(&cash, &Money{
 			ClientName: flyRecord.ClientName,
 		}).RecordNotFound() {

@@ -16,6 +16,8 @@ ROLLBACK PREPARED 'foobar';
 
 [Fantastic GORM example](http://gorm.io/docs/transactions.html)
 
+[TWO-PC with GORM](https://github.com/go-pg/pg/issues/490)
+
 ## two-phase commit command line client 
 
 ```
