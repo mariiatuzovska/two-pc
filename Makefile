@@ -2,6 +2,12 @@
 go:
 	go build -o ./two-pc
 
+start:
+	pg_ctl -D /usr/local/var/postgres start
+
+stop: 
+	pg_ctl -D /usr/local/var/postgres stop
+
 open:
 	sudo psql -U mari postgres
 

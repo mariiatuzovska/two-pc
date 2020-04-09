@@ -99,7 +99,13 @@ GO tools:
 
 `go build`
 
-`./two-pc book` or `./two-pc booking --ClientName Mariia --FlyNumber fu123 --From Kyiv --To Odessa --Date 12-06-2020 --HotelName BeutyHotel --Arrival 12-06-2020 --Departure 13-06-2020`
+`./two-pc book` or `./two-pc booking --ClientName mari --FlyNumber fu123 --From Kyiv --To Odessa --Date 12-06-2020 --HotelName BeutyHotel --Arrival 12-06-2020 --Departure 13-06-2020`
+
+Check:
+
+`SELECT * FROM pg_locks pl LEFT JOIN pg_stat_activity psa`
+
+`ON pl.pid = psa.pid;`
 
 anyway... 
 

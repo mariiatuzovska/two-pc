@@ -47,7 +47,7 @@ var (
 	layoutISO   string = "2006-01-02"
 )
 
-// /usr/local/Cellar/postgresql/12.2/share/doc/postgresql
+// /usr/local/var/postgres/postgresql.conf
 
 // /Users/mariiaandreevna/Projects/mygo/two-pc
 
@@ -62,10 +62,9 @@ func main() {
 	app.Authors = []cli.Author{cli.Author{Name: "Mariia Tuzovska"}}
 	app.Commands = []cli.Command{
 		{
-			Name:    "init",
-			Usage:   "Initialize client",
-			Aliases: []string{"b", "book"},
-			Action:  inite,
+			Name:   "init",
+			Usage:  "Initialize client",
+			Action: inite,
 			Flags: []cli.Flag{
 				&cli.StringFlag{
 					Name:  "money-db",
@@ -130,6 +129,28 @@ func main() {
 				&cli.StringFlag{
 					Name:  "Departure",
 					Usage: fmt.Sprintf("Departure date of Hotel Booking, for example %s", layoutISO),
+				},
+			},
+		},
+		{
+			Name:   "del",
+			Usage:  "Initialize client",
+			Action: del,
+			Flags: []cli.Flag{
+				&cli.StringFlag{
+					Name:  "fly-db",
+					Usage: "Path to Fly Booking db Configuration",
+					Value: "configs/fly.json",
+				},
+				&cli.StringFlag{
+					Name:  "hotel-db",
+					Usage: "Path to Holel Booking db Configuration",
+					Value: "configs/hotel.json",
+				},
+				&cli.StringFlag{
+					Name:  "money-db",
+					Usage: "Path to Holel Booking db Configuration",
+					Value: "configs/money.json",
 				},
 			},
 		},
@@ -220,7 +241,12 @@ func book(c *cli.Context) error {
 		log.Fatal(err)
 	}
 	log.Println("DEBUG | flyTX has been created")
-
+	if err := flyTX.Exec("PREPARE TRANSACTION 'foobar'").Error; err != nil {
+		flyTX.Rollback()
+		log.Println("DEBUG | flyTX has been prepared with error")
+		log.Fatal(err)
+	}
+	log.Println("DEBUG | flyTX has been prepared")
 	var (
 		command string
 		cash    Money
@@ -247,6 +273,10 @@ func book(c *cli.Context) error {
 			log.Println("DEBUG | cash -= 50")
 			flyTX.Commit()
 			log.Println("DEBUG | flyTX commited")
+		} else {
+			log.Println("DEBUG | flyTX rollbecked")
+			flyTX.Rollback()
+			return nil
 		}
 	} else if command == "n" || command == "no" {
 		// rollback the transaction
@@ -269,6 +299,12 @@ func book(c *cli.Context) error {
 			hotelTX.Rollback()
 			log.Fatal(err)
 		}
+		if err := hotelTX.Exec("PREPARE TRANSACTION 'foobar'").Error; err != nil {
+			hotelTX.Rollback()
+			log.Println("DEBUG | hotelTX has been prepared with error")
+			log.Fatal(err)
+		}
+		log.Println("DEBUG | flyTX has been prepared")
 		if moneyDB.First(&cash, &Money{
 			ClientName: flyRecord.ClientName,
 		}).RecordNotFound() {
@@ -409,4 +445,28 @@ func hotelFilling(c *cli.Context) *HotelBooking {
 		hotel.Departure = time.Now().Add(24 * time.Hour)
 	}
 	return &hotel
+}
+
+func del(c *cli.Context) error {
+	// connection and migration to Fly DB
+	flyDB, err := newDBConnection(c.String("fly-db"))
+	if err != nil {
+		log.Fatal(err)
+	}
+	flyDB.DropTableIfExists(&FlyBooking{})
+
+	// connection and migration to Money DB
+	moneyDB, err := newDBConnection(c.String("money-db"))
+	if err != nil {
+		log.Fatal(err)
+	}
+	moneyDB.DropTableIfExists(&Money{})
+
+	// connection and migration to Hotel DB
+	hotelDB, err := newDBConnection(c.String("hotel-db"))
+	if err != nil {
+		log.Fatal(err)
+	}
+	hotelDB.DropTableIfExists(&HotelBooking{})
+	return nil
 }
